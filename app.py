@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session
+from flask import Flask, render_template, request, redirect, session, flash
 from flask_sqlalchemy import SQLAlchemy
 import bcrypt
 
@@ -7,6 +7,8 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 db = SQLAlchemy(app)
 app.secret_key = 'secret_key'
 
+
+#Create User model
 class User(db.Model):
     id = db.Column(db.Integer, primary_key = True)
     name = db.Column(db.String(100), nullable = False)
@@ -32,30 +34,55 @@ def index():
 @app.route("/register", methods=['GET','POST'])
 def register():
     if request.method == 'POST':
-        name = request.form['name']
-        email = request.form['email']
-        password = request.form['password']
+        name = request.form.get('name', '').strip()
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '').strip()
         
-        new_user = User(name=name, email=email, password=password)
-        db.session.add(new_user)
-        db.session.commit()
-        return redirect('/login')
+        if not name or not email or not password:
+            flash("All fields are required!", "danger")
+            return redirect("/register")
+        if password and len(password) < 6:
+            flash("Password must be at least 6 characters long!", "danger")
+            return redirect("/register")
+        
+        # Check if email already exists
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            flash("Email already registered!", "danger")
+            return redirect("/register")
+        
+        try:
+            new_user = User(name=name, email=email, password=password)
+            db.session.add(new_user)
+            db.session.commit()
+            flash("Registration successful! Please log in.", "success")
+            return redirect('/login')
+        except Exception as e:
+            db.session.rollback()
+            flash("Registration failed. Please try again.", "danger")
+            return redirect("/register")
     
     return render_template("register.html")
 
 @app.route("/login", methods=['GET','POST'])
 def login():
     if request.method == 'POST':
-        email = request.form['email']
-        password = request.form['password']
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '').strip()
+        
+        if not email or not password:
+            flash("Email and password are required!", "danger")
+            return render_template('login.html')
         
         user = User.query.filter_by(email=email).first()
         
         if user and user.check_password(password):
             session['email'] = user.email
+            flash("Login successful!", "success")
             return redirect('/dashboard')
         else:
-            return render_template('login.html',error='Invalid Password')
+            flash("Invalid email or password!", "danger")
+            return render_template('login.html')
         
     return render_template("login.html")
 
@@ -68,10 +95,9 @@ def dashboard():
 
 @app.route('/logout')
 def logout():
-    session.pop('email',None)
+    session.clear()
+    flash("Logged out successfully!", "success")
     return redirect('/login') 
-
-
 
 if __name__ == '__main__':
     app.run(debug=True)
